@@ -173,7 +173,7 @@ def get_answer(
                     model=model,
                     messages=messages,
                     max_tokens=max_tokens,
-                    temperature=args.final_aggregator_temp,
+                    temperature=args.aggregate_temp,
                     generate_fn=generate_fn,
                     references=prev_references,
                 ).strip()
@@ -236,7 +236,7 @@ if __name__ == "__main__":
         "--aggregate_choices",action='store_true', help="Pass the choices through one final aggregator"
     )
     parser.add_argument(
-        "--final_aggregator_temp", default=0.0, type=float, help="Temperature for final aggregator if aggregating choices"
+        "--aggregate_temp", default=0.0, type=float, help="Temperature for final aggregator if aggregating choices"
     )
     args = parser.parse_args()
 
@@ -267,6 +267,7 @@ if __name__ == "__main__":
                 answer_file,
                 args.rounds,
                 args.provider,
+                args.aggregate_choices
             )
             futures.append(future)
 
