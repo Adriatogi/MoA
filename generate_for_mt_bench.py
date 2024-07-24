@@ -195,11 +195,13 @@ def get_answer(
                 ).strip()
             else:
                 output = generate_layer_output(model=model,
+                                               reference_models=reference_models,
                                                messages=messages,
                                                max_tokens=max_tokens,
                                                temperature=temperature,
                                                generate_fn=generate_fn,
-                                               references=branch_responses).strip()
+                                               rounds=rounds
+                                               ).strip()
 
             messages.append(
                 {
