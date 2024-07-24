@@ -75,7 +75,7 @@ def generate_together(
         else:
             logger.debug(f"Output: `{output[:20]}...`.")
 
-    return output
+    return output.strip()
 
 
 def generate_together_stream(
@@ -185,3 +185,103 @@ def generate_with_references(
         max_tokens=max_tokens,
         completion_tokens=completion_tokens
     )
+
+def generate_reference_models(messages, reference_models,
+                              temperature, max_tokens,
+                              rounds, generate_fn=generate_together):
+    prev_references = []
+
+    for i_round in range(rounds):
+
+        if DEBUG:
+            logger.info(
+                f"Round {i_round+1}/{rounds} to collecting reference responses."
+            )
+
+        references = []
+
+        for reference_model in reference_models:
+
+            reference = generate_with_references(
+                model=reference_model,
+                messages=messages,
+                references=prev_references,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                generate_fn=generate_fn,
+            )
+
+            if reference is not None:
+
+                references.append(reference)
+
+        if i_round < rounds - 1:
+
+            prev_references = references
+
+            references = []
+
+    return references
+
+def generate_layer_output(model,
+                          reference_models,
+                          messages,
+                          max_tokens,
+                          temperature,
+                          rounds,
+                          generate_fn=generate_together):
+    references = []
+
+    # generate refrences
+    if len(reference_models) > 0:
+
+        references = generate_reference_models(messages=messages,
+                                               reference_models=reference_models,
+                                               temperature=temperature,
+                                               max_tokens=max_tokens,
+                                               generate_fn=generate_fn,
+                                               rounds=rounds)
+
+    # aggregate on top of refrences
+    output = generate_with_references(
+        model=model,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        generate_fn=generate_fn,
+        references=references,
+    )
+
+    return output
+
+def generate_branch_output(model,
+                           reference_models,
+                           messages,
+                           max_tokens,
+                           temperature,
+                           rounds,
+                           branches,
+                           aggregate_temp=0.0,
+                           generate_fn=generate_together):
+    branch_responses = []
+    for k in range(branches):
+        print("branch ", k)
+        output = generate_layer_output(model=model, 
+                                    reference_models=reference_models,
+                                    messages=messages,
+                                    max_tokens=max_tokens, 
+                                    temperature=temperature,
+                                    generate_fn=generate_fn, 
+                                    rounds=rounds)
+        if output is not None:
+            branch_responses.append(output)
+
+    output = generate_with_references(
+        model=model,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=aggregate_temp,
+        generate_fn=generate_fn,
+        references=branch_responses,
+        )
+    return output

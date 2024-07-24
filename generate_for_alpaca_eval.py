@@ -9,6 +9,9 @@ from utils import (
     generate_together,
     generate_openai,
     generate_with_references,
+    generate_reference_models,
+    generate_layer_output,
+    generate_branch_output,
     DEBUG,
 )
 
@@ -20,50 +23,32 @@ def process_fn(
     temperature=0.7,
     max_tokens=2048,
     rounds=1,
+    branches=0,
+    aggregate_temp=0.0
 ):
 
     messages = [{"role": "user", "content": item["instruction"]}]
 
-    references = item.get("references", [])
+    #references = item.get("references", [])
 
-    if len(references) == 0 and len(reference_models) > 0:
-
-        prev_references = []
-
-        for i_round in range(rounds):
-
-            if DEBUG:
-                logger.info(
-                    f"Round {i_round+1}/{rounds} to collecting reference responses."
-                )
-
-            references = []
-
-            for reference_model in reference_models:
-
-                reference = generate_with_references(
-                    model=reference_model,
-                    messages=messages,
-                    references=prev_references,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
-
-                if reference is not None:
-
-                    references.append(reference)
-
-            if i_round < rounds - 1:
-
-                prev_references = references
-
-                references = []
-
-    output = generate_with_references(
-        model=model,
-        messages=messages,
-        references=references,
-    )
+    if branches > 0:
+        print("branching")
+        output = generate_branch_output(model=model, 
+                                        reference_models=reference_models,
+                                        messages=messages,
+                                        max_tokens=max_tokens,
+                                        temperature=temperature,
+                                        rounds=rounds,
+                                        branches=branches, 
+                                        aggregate_temp=aggregate_temp
+                                        )
+    else:
+        output = generate_layer_output(model=model,
+                                       reference_models=reference_models,
+                                       messages=messages,
+                                       max_tokens=max_tokens,
+                                       temperature=temperature,
+                                       rounds=rounds)
 
     return {"output": output, "generator": model + "-together"}
 
@@ -77,6 +62,8 @@ def main(
     max_tokens: int = 2048,
     rounds: int = 1,
     num_proc: int = 16,
+    branches: int = 0,
+    aggregate_temp: float = 0.0
 ):
 
     if reference_paths is None:
@@ -94,31 +81,30 @@ def main(
     )["eval"]
     eval_set = eval_set.remove_columns(["output", "generator"])
 
-    if len(reference_paths):
+    # if len(reference_paths):
 
-        logger.info(f"`reference_paths` provided: {reference_paths}")
+    #     logger.info(f"`reference_paths` provided: {reference_paths}")
 
-        references = []
-        for reference_path in reference_paths:
-            with open(reference_path) as f:
-                reference_responses = json.load(f)
-                logger.info(
-                    f"Reading reference outputs: {reference_path} ({len(reference_responses)})"
-                )
-                for i_reference_response, reference_response in enumerate(
-                    reference_responses
-                ):
-                    if len(references) <= i_reference_response:
-                        references.append([reference_response["output"]])
-                    else:
-                        references[i_reference_response].append(
-                            reference_response["output"]
-                        )
+    #     references = []
+    #     for reference_path in reference_paths:
+    #         with open(reference_path) as f:
+    #             reference_responses = json.load(f)
+    #             logger.info(
+    #                 f"Reading reference outputs: {reference_path} ({len(reference_responses)})"
+    #             )
+    #             for i_reference_response, reference_response in enumerate(
+    #                 reference_responses
+    #             ):
+    #                 if len(references) <= i_reference_response:
+    #                     references.append([reference_response["output"]])
+    #                 else:
+    #                     references[i_reference_response].append(
+    #                         reference_response["output"]
+    #                     )
 
-        eval_set = eval_set.add_column(f"references", references)
+    #     eval_set = eval_set.add_column(f"references", references)
 
-    elif len(reference_models):
-
+    if len(reference_models):
         logger.info(
             f"`reference_models` provided: {reference_models}. Will generate reference responses on-the-fly."
         )
@@ -133,6 +119,8 @@ def main(
             temperature=temperature,
             max_tokens=max_tokens,
             rounds=rounds,
+            branches=branches,
+            aggregate_temp=aggregate_temp
         ),
         batched=False,
         num_proc=num_proc,

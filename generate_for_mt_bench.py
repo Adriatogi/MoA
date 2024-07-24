@@ -49,6 +49,9 @@ from utils import (
     generate_together,
     generate_openai,
     generate_with_references,
+    generate_reference_models,
+    generate_layer_output,
+    generate_branch_output,
     DEBUG,
 )
 
@@ -57,76 +60,6 @@ from utils import (
 Usage:
 python3 gen_api_answer.py --model gpt-3.5-turbo
 """
-
-
-def generate_reference_models(messages, reference_models,
-                              temperature, max_tokens,
-                              generate_fn, rounds):
-    prev_references = []
-
-    for i_round in range(rounds):
-
-        if DEBUG:
-            logger.info(
-                f"Round {i_round+1}/{rounds} to collecting reference responses."
-            )
-
-        references = []
-        print("getting references")
-        for reference_model in reference_models:
-
-            reference = generate_with_references(
-                model=reference_model,
-                messages=messages,
-                references=prev_references,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                generate_fn=generate_fn,
-            )
-
-            if reference is not None:
-
-                references.append(reference)
-
-        if i_round < rounds - 1:
-
-            prev_references = references
-
-            references = []
-
-    return references
-
-
-def generate_layer_output(model,
-                          reference_models,
-                          messages,
-                          max_tokens,
-                          temperature,
-                          generate_fn,
-                          rounds):
-    references = []
-
-    # generate refrences
-    if len(reference_models) > 0:
-
-        references = generate_reference_models(messages,
-                                               reference_models,
-                                               temperature,
-                                               max_tokens,
-                                               generate_fn,
-                                               rounds)
-
-    # aggregate on top of refrences
-    output = generate_with_references(
-        model=model,
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        generate_fn=generate_fn,
-        references=references,
-    ).strip()
-
-    return output
 
 
 def get_answer(
@@ -170,29 +103,17 @@ def get_answer(
             qs = question["turns"][j]
 
             messages.append({"role": "user", "content": qs})
-            branch_responses = []
-
             if branches > 0:
-                for k in range(branches):
-                    print("branch k: ", k)
-                    output = generate_layer_output(model=model, 
-                                                   reference_models=reference_models,
-                                                   messages=messages,
-                                                   max_tokens=max_tokens, 
-                                                   temperature=temperature,
-                                                   generate_fn=generate_fn, 
-                                                   rounds=rounds)
-                    if output is not None:
-                        branch_responses.append(output)
-
-                output = generate_with_references(
-                    model=model,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=args.aggregate_temp,
-                    generate_fn=generate_fn,
-                    references=branch_responses,
-                ).strip()
+                
+                output = generate_branch_output(model=model, 
+                                                reference_models=reference_models,
+                                                messages=messages,
+                                                max_tokens=max_tokens,
+                                                temperature=temperature,
+                                                generate_fn=generate_fn,
+                                                rounds=rounds,branches=branches, 
+                                                aggregate_temp=args.aggregate_temp,
+                                                )
             else:
                 output = generate_layer_output(model=model,
                                                reference_models=reference_models,
@@ -201,7 +122,7 @@ def get_answer(
                                                temperature=temperature,
                                                generate_fn=generate_fn,
                                                rounds=rounds
-                                               ).strip()
+                                               )
 
             messages.append(
                 {
