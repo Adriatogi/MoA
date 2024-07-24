@@ -4,6 +4,7 @@ from fire import Fire
 from functools import partial
 from typing import List
 from loguru import logger
+import time
 
 from utils import (
     generate_together,
@@ -25,7 +26,7 @@ def process_fn(
     rounds=1,
     branches=0,
     aggregate_temp=0.0,
-    tag = ''
+    tag="",
 ):
 
     messages = [{"role": "user", "content": item["instruction"]}]
@@ -33,26 +34,29 @@ def process_fn(
     references = item.get("references", [])
 
     if branches > 0:
-        output = generate_branch_output(model=model, 
-                                        reference_models=reference_models,
-                                        references=references,
-                                        messages=messages,
-                                        max_tokens=max_tokens,
-                                        temperature=temperature,
-                                        rounds=rounds,
-                                        branches=branches, 
-                                        aggregate_temp=aggregate_temp
-                                        )
+        output = generate_branch_output(
+            model=model,
+            reference_models=reference_models,
+            references=references,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            rounds=rounds,
+            branches=branches,
+            aggregate_temp=aggregate_temp,
+        )
     else:
-        output = generate_layer_output(model=model,
-                                       reference_models=reference_models,
-                                       references=references,
-                                       messages=messages,
-                                       max_tokens=max_tokens,
-                                       temperature=temperature,
-                                       rounds=rounds)
+        output = generate_layer_output(
+            model=model,
+            reference_models=reference_models,
+            references=references,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            rounds=rounds,
+        )
 
-    return {"output": output, "generator": model + "-together-"+ tag}
+    return {"output": output, "generator": model + "-together-" + tag}
 
 
 def main(
@@ -66,8 +70,10 @@ def main(
     num_proc: int = 16,
     branches: int = 0,
     aggregate_temp: float = 0.0,
-    tag: str = ''
+    tag: str = "",
 ):
+
+    print(reference_models)
 
     if reference_paths is None:
         reference_paths = []
@@ -125,7 +131,7 @@ def main(
             rounds=rounds,
             branches=branches,
             aggregate_temp=aggregate_temp,
-            tag=tag
+            tag=tag,
         ),
         batched=False,
         num_proc=num_proc,
