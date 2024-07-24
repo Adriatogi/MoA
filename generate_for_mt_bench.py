@@ -21,12 +21,6 @@ from fastchat.utils import str_to_torch_dtype
 import requests
 from loguru import logger
 
-
-"""Generate answers with GPT-4
-
-Usage:
-python3 gen_api_answer.py --model gpt-3.5-turbo
-"""
 import argparse
 import json
 import os
@@ -58,6 +52,82 @@ from utils import (
     DEBUG,
 )
 
+"""Generate answers with GPT-4
+
+Usage:
+python3 gen_api_answer.py --model gpt-3.5-turbo
+"""
+
+
+def generate_reference_models(messages, reference_models,
+                              temperature, max_tokens,
+                              generate_fn, rounds):
+    prev_references = []
+
+    for i_round in range(rounds):
+
+        if DEBUG:
+            logger.info(
+                f"Round {i_round+1}/{rounds} to collecting reference responses."
+            )
+
+        references = []
+        print("getting references")
+        for reference_model in reference_models:
+
+            reference = generate_with_references(
+                model=reference_model,
+                messages=messages,
+                references=prev_references,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                generate_fn=generate_fn,
+            )
+
+            if reference is not None:
+
+                references.append(reference)
+
+        if i_round < rounds - 1:
+
+            prev_references = references
+
+            references = []
+
+    return references
+
+
+def generate_layer_output(model,
+                          reference_models,
+                          messages,
+                          max_tokens,
+                          temperature,
+                          generate_fn,
+                          rounds):
+    references = []
+
+    # generate refrences
+    if len(reference_models) > 0:
+
+        references = generate_reference_models(messages,
+                                               reference_models,
+                                               temperature,
+                                               max_tokens,
+                                               generate_fn,
+                                               rounds)
+
+    # aggregate on top of refrences
+    output = generate_with_references(
+        model=model,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        generate_fn=generate_fn,
+        references=references,
+    ).strip()
+
+    return output
+
 
 def get_answer(
     question: dict,
@@ -68,7 +138,7 @@ def get_answer(
     answer_file: str,
     rounds: int,
     provider: str,
-    aggregate_choices:bool
+    branches: int
 ):
     assert (
         args.force_temperature is not None and "required_temperature" in question.keys()
@@ -100,51 +170,36 @@ def get_answer(
             qs = question["turns"][j]
 
             messages.append({"role": "user", "content": qs})
+            branch_responses = []
 
-            references = []
+            if branches > 0:
+                for k in range(branches):
+                    print("branch k: ", k)
+                    output = generate_layer_output(model=model, 
+                                                   reference_models=reference_models,
+                                                   messages=messages,
+                                                   max_tokens=max_tokens, 
+                                                   temperature=temperature,
+                                                   generate_fn=generate_fn, 
+                                                   rounds=rounds)
+                    if output is not None:
+                        branch_responses.append(output)
 
-            if len(reference_models) > 0:
-
-                prev_references = []
-
-                for i_round in range(rounds):
-
-                    if DEBUG:
-                        logger.info(
-                            f"Round {i_round+1}/{rounds} to collecting reference responses."
-                        )
-
-                    references = []
-
-                    for reference_model in reference_models:
-
-                        reference = generate_with_references(
-                            model=reference_model,
-                            messages=messages,
-                            references=prev_references,
-                            temperature=temperature,
-                            max_tokens=max_tokens,
-                            generate_fn=generate_fn,
-                        )
-
-                        if reference is not None:
-
-                            references.append(reference)
-
-                    if i_round < rounds - 1:
-
-                        prev_references = references
-
-                        references = []
-
-            output = generate_with_references(
-                model=model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                generate_fn=generate_fn,
-                references=references,
-            ).strip()
+                output = generate_with_references(
+                    model=model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=args.aggregate_temp,
+                    generate_fn=generate_fn,
+                    references=branch_responses,
+                ).strip()
+            else:
+                output = generate_layer_output(model=model,
+                                               messages=messages,
+                                               max_tokens=max_tokens,
+                                               temperature=temperature,
+                                               generate_fn=generate_fn,
+                                               references=branch_responses).strip()
 
             messages.append(
                 {
@@ -155,30 +210,6 @@ def get_answer(
 
             turns.append(output)
         choices.append({"index": i, "turns": turns})
-
-    if  aggregate_choices:
-        print("aggregating")
-
-        prev_references = []
-        messages = []
-
-        for choice in choices:
-            prev_references.append(choice['turns'][0])
-
-        qs = question["turns"][0]
-
-        messages.append({"role": "user", "content": qs})
-            
-        output = generate_with_references(
-                    model=model,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=args.aggregate_temp,
-                    generate_fn=generate_fn,
-                    references=prev_references,
-                ).strip()
-        
-        choices = [{"index": 0, "turns": [output]}]
 
     # Dump answers
     ans = {
@@ -201,7 +232,8 @@ if __name__ == "__main__":
         default="mt_bench",
         help="The name of the benchmark question set.",
     )
-    parser.add_argument("--answer-file", type=str, help="The output answer file.")
+    parser.add_argument("--answer-file", type=str,
+                        help="The output answer file.")
     parser.add_argument("--model", type=str, default="gpt-3.5-turbo")
     parser.add_argument("--reference-models", type=str, default=None)
     parser.add_argument("--rounds", type=int, default=1)
@@ -233,7 +265,7 @@ if __name__ == "__main__":
         "--parallel", type=int, default=1, help="The number of concurrent API calls."
     )
     parser.add_argument(
-        "--aggregate_choices",action='store_true', help="Pass the choices through one final aggregator"
+        "--branches", default=0, type=int, help="number of branches to make before passed to final aggregator"
     )
     parser.add_argument(
         "--aggregate_temp", default=0.0, type=float, help="Temperature for final aggregator if aggregating choices"
@@ -241,7 +273,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     question_file = f"FastChat/fastchat/llm_judge/data/{args.bench_name}/question.jsonl"
-    questions = load_questions(question_file, args.question_begin, args.question_end)
+    questions = load_questions(
+        question_file, args.question_begin, args.question_end)
 
     if args.answer_file:
         answer_file = args.answer_file
@@ -267,7 +300,7 @@ if __name__ == "__main__":
                 answer_file,
                 args.rounds,
                 args.provider,
-                args.aggregate_choices
+                args.branches
             )
             futures.append(future)
 
