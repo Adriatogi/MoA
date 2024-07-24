@@ -68,6 +68,7 @@ def get_answer(
     answer_file: str,
     rounds: int,
     provider: str,
+    aggregate_choices:bool
 ):
     assert (
         args.force_temperature is not None and "required_temperature" in question.keys()
@@ -80,7 +81,6 @@ def get_answer(
         temperature = temperature_config[question["category"]]
     else:
         temperature = 0.7
-
     choices = []
 
     if provider == "together":
@@ -154,8 +154,31 @@ def get_answer(
             )
 
             turns.append(output)
-
         choices.append({"index": i, "turns": turns})
+
+    if  aggregate_choices:
+        print("aggregating")
+
+        prev_references = []
+        messages = []
+
+        for choice in choices:
+            prev_references.append(choice['turns'][0])
+
+        qs = question["turns"][0]
+
+        messages.append({"role": "user", "content": qs})
+            
+        output = generate_with_references(
+                    model=model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    generate_fn=generate_fn,
+                    references=prev_references,
+                ).strip()
+        
+    choices = [{"index": 0, "turns": [output]}]
 
     # Dump answers
     ans = {
@@ -165,7 +188,6 @@ def get_answer(
         "choices": choices,
         "tstamp": time.time(),
     }
-
     os.makedirs(os.path.dirname(answer_file), exist_ok=True)
     with open(answer_file, "a") as fout:
         fout.write(json.dumps(ans) + "\n")
@@ -209,6 +231,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--parallel", type=int, default=1, help="The number of concurrent API calls."
+    )
+    parser.add_argument(
+        "--aggregate_choices",action='store_true', help="Pass the choices through one final aggregator"
     )
     args = parser.parse_args()
 
