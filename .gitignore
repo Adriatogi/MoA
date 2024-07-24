@@ -1,1 +1,7 @@
 __pycache__
+
+MixEval/*.egg-info
+MixEval/scripts/
+MixEval/mix_eval/data/test/
+MixEval/mix_eval/eval_scripts
+MixEvalbuild_dynamic_benchmark_version_control.sh
