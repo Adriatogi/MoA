@@ -173,12 +173,12 @@ def get_answer(
                     model=model,
                     messages=messages,
                     max_tokens=max_tokens,
-                    temperature=temperature,
+                    temperature=args.final_aggregator_temp,
                     generate_fn=generate_fn,
                     references=prev_references,
                 ).strip()
         
-    choices = [{"index": 0, "turns": [output]}]
+        choices = [{"index": 0, "turns": [output]}]
 
     # Dump answers
     ans = {
@@ -234,6 +234,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--aggregate_choices",action='store_true', help="Pass the choices through one final aggregator"
+    )
+    parser.add_argument(
+        "--final_aggregator_temp", default=0.0, type=float, help="Temperature for final aggregator if aggregating choices"
     )
     args = parser.parse_args()
 
