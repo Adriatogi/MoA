@@ -17,6 +17,7 @@ def generate_together(
     max_tokens=2048,
     temperature=0.7,
     streaming=False,
+    completion_tokens=False
 ):
 
     output = None
@@ -50,7 +51,10 @@ def generate_together(
                     logger.info("Input + output is longer than max_position_id.")
                     return None
 
-            output = res.json()["choices"][0]["message"]["content"]
+            if completion_tokens:
+                output = {"content": res.json()["choices"][0]["message"]["content"].strip(), "completion_tokens": res.json()["usage"]["completion_tokens"]}
+            else:
+                output = res.json()["choices"][0]["message"]["content"].strip()
 
             break
 
@@ -63,13 +67,13 @@ def generate_together(
             time.sleep(sleep_time)
 
     if output is None:
-
         return output
 
-    output = output.strip()
-
     if DEBUG:
-        logger.debug(f"Output: `{output[:20]}...`.")
+        if completion_tokens:
+            logger.debug("Output: `"+ output["content"][:20] + "...`.")
+        else:
+            logger.debug(f"Output: `{output[:20]}...`.")
 
     return output
 
@@ -167,6 +171,7 @@ def generate_with_references(
     max_tokens=2048,
     temperature=0.7,
     generate_fn=generate_together,
+    completion_tokens=False
 ):
 
     if len(references) > 0:
@@ -178,4 +183,5 @@ def generate_with_references(
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
+        completion_tokens=completion_tokens
     )
