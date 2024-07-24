@@ -24,17 +24,18 @@ def process_fn(
     max_tokens=2048,
     rounds=1,
     branches=0,
-    aggregate_temp=0.0
+    aggregate_temp=0.0,
+    tag = ''
 ):
 
     messages = [{"role": "user", "content": item["instruction"]}]
 
-    #references = item.get("references", [])
+    references = item.get("references", [])
 
     if branches > 0:
-        print("branching")
         output = generate_branch_output(model=model, 
                                         reference_models=reference_models,
+                                        references=references,
                                         messages=messages,
                                         max_tokens=max_tokens,
                                         temperature=temperature,
@@ -45,12 +46,13 @@ def process_fn(
     else:
         output = generate_layer_output(model=model,
                                        reference_models=reference_models,
+                                       references=references,
                                        messages=messages,
                                        max_tokens=max_tokens,
                                        temperature=temperature,
                                        rounds=rounds)
 
-    return {"output": output, "generator": model + "-together"}
+    return {"output": output, "generator": model + "-together-"+ tag}
 
 
 def main(
@@ -63,7 +65,8 @@ def main(
     rounds: int = 1,
     num_proc: int = 16,
     branches: int = 0,
-    aggregate_temp: float = 0.0
+    aggregate_temp: float = 0.0,
+    tag: str = ''
 ):
 
     if reference_paths is None:
@@ -81,28 +84,29 @@ def main(
     )["eval"]
     eval_set = eval_set.remove_columns(["output", "generator"])
 
-    # if len(reference_paths):
+    if len(reference_paths):
 
-    #     logger.info(f"`reference_paths` provided: {reference_paths}")
+        logger.info(f"`reference_paths` provided: {reference_paths}")
 
-    #     references = []
-    #     for reference_path in reference_paths:
-    #         with open(reference_path) as f:
-    #             reference_responses = json.load(f)
-    #             logger.info(
-    #                 f"Reading reference outputs: {reference_path} ({len(reference_responses)})"
-    #             )
-    #             for i_reference_response, reference_response in enumerate(
-    #                 reference_responses
-    #             ):
-    #                 if len(references) <= i_reference_response:
-    #                     references.append([reference_response["output"]])
-    #                 else:
-    #                     references[i_reference_response].append(
-    #                         reference_response["output"]
-    #                     )
+        references = []
+        for reference_path in reference_paths:
+            with open(reference_path) as f:
+                reference_responses = json.load(f)
+                logger.info(
+                    f"Reading reference outputs: {reference_path} ({len(reference_responses)})"
+                )
+                for i_reference_response, reference_response in enumerate(
+                    reference_responses
+                ):
+                    if len(references) <= i_reference_response:
+                        references.append([reference_response["output"]])
+                    else:
+                        references[i_reference_response].append(
+                            reference_response["output"]
+                        )
 
-    #     eval_set = eval_set.add_column(f"references", references)
+        eval_set = eval_set.add_column(f"references", references)
+        print(eval_set)
 
     if len(reference_models):
         logger.info(
@@ -120,7 +124,8 @@ def main(
             max_tokens=max_tokens,
             rounds=rounds,
             branches=branches,
-            aggregate_temp=aggregate_temp
+            aggregate_temp=aggregate_temp,
+            tag=tag
         ),
         batched=False,
         num_proc=num_proc,

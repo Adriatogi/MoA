@@ -71,9 +71,9 @@ def generate_together(
 
     if DEBUG:
         if completion_tokens:
-            logger.debug("Output: `"+ output["content"][:20] + "...`.")
+            logger.debug("Output: `"+ output["content"][:50] + "...`.")
         else:
-            logger.debug(f"Output: `{output[:20]}...`.")
+            logger.debug(f"Output: `{output[:50]}...`.")
 
     return output.strip()
 
@@ -229,11 +229,12 @@ def generate_layer_output(model,
                           max_tokens,
                           temperature,
                           rounds,
-                          generate_fn=generate_together):
-    references = []
+                          generate_fn=generate_together,
+                          references=[]):
+    
 
     # generate refrences
-    if len(reference_models) > 0:
+    if len(references) == 0 and len(reference_models) > 0:
 
         references = generate_reference_models(messages=messages,
                                                reference_models=reference_models,
@@ -262,20 +263,26 @@ def generate_branch_output(model,
                            rounds,
                            branches,
                            aggregate_temp=0.0,
-                           generate_fn=generate_together):
+                           generate_fn=generate_together,
+                           references=[]):
     branch_responses = []
     for k in range(branches):
-        print("branch ", k)
         output = generate_layer_output(model=model, 
                                     reference_models=reference_models,
                                     messages=messages,
                                     max_tokens=max_tokens, 
                                     temperature=temperature,
                                     generate_fn=generate_fn, 
-                                    rounds=rounds)
+                                    rounds=rounds,
+                                    references=references)
         if output is not None:
             branch_responses.append(output)
 
+    # Stacked aggregator on branches
+    if DEBUG:
+            logger.info(
+                f"Branch aggregator: {len(branch_responses)}"
+            )
     output = generate_with_references(
         model=model,
         messages=messages,
